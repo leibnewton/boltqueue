@@ -11,15 +11,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNoDeadLockInSize(t *testing.T) {
+func setup(t assert.TestingT) (*PQueue, func()) {
 	queueFile := fmt.Sprintf("%d_test.db", time.Now().UnixNano())
 	testPQueue, err := NewPQueue(queueFile)
-	if err != nil {
-		t.Error(err)
+	if !assert.NoError(t, err) {
+		panic(err)
 	}
-	defer os.Remove(queueFile)
-	defer testPQueue.Close()
+	return testPQueue, func() {
+		testPQueue.Close()
+		os.Remove(queueFile)
+	}
+}
 
+func TestNoDeadLockInSize(t *testing.T) {
+	testPQueue, done := setup(t)
+	defer done()
 	n, err := testPQueue.Size(0)
 	assert.NoError(t, err)
 	assert.Zero(t, n)
@@ -30,14 +36,18 @@ func TestNoDeadLockInSize(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestDequeueEmptyMessage(t *testing.T) {
+	testPQueue, done := setup(t)
+	defer done()
+
+	m, err := testPQueue.Dequeue()
+	assert.NoError(t, err)
+	assert.Nil(t, m)
+}
+
 func TestEnqueue(t *testing.T) {
-	queueFile := fmt.Sprintf("%d_test.db", time.Now().UnixNano())
-	testPQueue, err := NewPQueue(queueFile)
-	if err != nil {
-		t.Error(err)
-	}
-	defer os.Remove(queueFile)
-	defer testPQueue.Close()
+	testPQueue, done := setup(t)
+	defer done()
 
 	// Enqueue 50 messages
 	for p := 1; p <= 5; p++ {
@@ -61,13 +71,8 @@ func TestEnqueue(t *testing.T) {
 }
 
 func TestDequeue(t *testing.T) {
-	queueFile := fmt.Sprintf("%d_test.db", time.Now().UnixNano())
-	testPQueue, err := NewPQueue(queueFile)
-	if err != nil {
-		t.Error(err)
-	}
-	defer os.Remove(queueFile)
-	defer testPQueue.Close()
+	testPQueue, done := setup(t)
+	defer done()
 
 	//Put them in in reverse priority order
 	for p := 5; p >= 1; p-- {
@@ -107,13 +112,8 @@ func TestDequeue(t *testing.T) {
 }
 
 func TestRequeue(t *testing.T) {
-	queueFile := fmt.Sprintf("%d_test.db", time.Now().UnixNano())
-	testPQueue, err := NewPQueue(queueFile)
-	if err != nil {
-		t.Error(err)
-	}
-	defer os.Remove(queueFile)
-	defer testPQueue.Close()
+	testPQueue, done := setup(t)
+	defer done()
 
 	for p := 1; p <= 5; p++ {
 		err := testPQueue.Enqueue(p, NewMessage(fmt.Sprintf("test message %d", p)))
@@ -129,7 +129,7 @@ func TestRequeue(t *testing.T) {
 	_, _ = testPQueue.Dequeue()
 
 	//Re-enqueue the message at priority 1
-	err = testPQueue.Requeue(1, mp1)
+	err = testPQueue.RequeueAs(1, mp1)
 	if err != nil {
 		t.Error(err)
 	}
@@ -147,13 +147,8 @@ func TestRequeue(t *testing.T) {
 }
 
 func TestGoroutines(t *testing.T) {
-	queueFile := fmt.Sprintf("%d_test.db", time.Now().UnixNano())
-	testPQueue, err := NewPQueue(queueFile)
-	if err != nil {
-		t.Error(err)
-	}
-	defer os.Remove(queueFile)
-	defer testPQueue.Close()
+	testPQueue, done := setup(t)
+	defer done()
 
 	var wg sync.WaitGroup
 
@@ -214,11 +209,11 @@ func TestGoroutines(t *testing.T) {
 }
 
 func BenchmarkPQueue(b *testing.B) {
-	queueFile := fmt.Sprintf("%d_test.db", time.Now().UnixNano())
-	queue, err := NewPQueue(queueFile)
-	if err != nil {
-		b.Error(err)
-	}
+	b.StopTimer()
+	queue, done := setup(b)
+	defer done()
+
+	b.StartTimer()
 	for n := 0; n < b.N; n++ {
 		for p := 1; p <= 5; p++ {
 			queue.Enqueue(p, NewMessage(fmt.Sprintf("test message %d-%d", p, n)))
@@ -228,14 +223,42 @@ func BenchmarkPQueue(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		for p := 1; p <= 6; p++ {
 			_, err := queue.Dequeue()
-			if err != nil {
-				b.Error(err)
-			}
+			assert.NoError(b, err)
 		}
 	}
-	err = queue.Close()
-	os.Remove(queueFile)
-	if err != nil {
-		b.Error(err)
+	b.StopTimer()
+}
+
+func BenchmarkPQueue_Enqueue(b *testing.B) {
+	b.StopTimer()
+	queue, done := setup(b)
+	defer done()
+
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		for p := 1; p <= 5; p++ {
+			queue.Enqueue(p, NewMessage(fmt.Sprintf("test message %d-%d", p, n)))
+		}
 	}
+	b.StopTimer()
+}
+
+func BenchmarkPQueue_Dequeue(b *testing.B) {
+	b.StopTimer()
+	queue, done := setup(b)
+	defer done()
+
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		for p := 1; p <= 6; p++ {
+			queue.Enqueue(p, NewMessage(fmt.Sprintf("test message %d-%d", p, n)))
+		}
+		b.StartTimer()
+		for p := 1; p <= 6; p++ {
+			_, err := queue.Dequeue()
+			assert.NoError(b, err)
+		}
+	}
+	b.StopTimer()
 }

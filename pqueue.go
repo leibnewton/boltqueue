@@ -23,7 +23,7 @@ type PQueue struct {
 func NewPQueue(filename string) (*PQueue, error) {
 	db, err := bolt.Open(filename, 0644, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "open db failed")
 	}
 	return &PQueue{db}, nil
 }
@@ -44,11 +44,11 @@ func (b *PQueue) enqueueMessage(priority int, key []byte, message *Message) erro
 		// Get bucket for this priority level
 		pb, err := tx.CreateBucketIfNotExists(p)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "create bucket failed")
 		}
 		err = pb.Put(key, message.value)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "put message failed")
 		}
 		return nil
 	})
@@ -61,15 +61,20 @@ func (b *PQueue) Enqueue(priority int, message *Message) error {
 	return b.enqueueMessage(priority, k, message)
 }
 
-// Requeue adds a message back into the queue, keeping its precedence.
+// RequeueAs adds a message back into the queue, keeping its precedence.
 // If added at the same priority, it should be among the first to dequeue.
 // If added at a different priority, it will dequeue before newer messages
 // of that priority.
-func (b *PQueue) Requeue(priority int, message *Message) error {
+func (b *PQueue) RequeueAs(priority int, message *Message) error {
 	if message.key == nil {
 		return errors.New("cannot requeue new message")
 	}
 	return b.enqueueMessage(priority, message.key, message)
+}
+
+// Requeue adds a message back into the queue with the same priority, it should be among the first to dequeue.
+func (b *PQueue) Requeue(message *Message) error {
+	return b.RequeueAs(message.priority, message)
 }
 
 // Dequeue removes the oldest, highest priority message from the queue and
@@ -78,7 +83,7 @@ func (b *PQueue) Dequeue() (*Message, error) {
 	var m *Message
 	err := b.conn.Update(func(tx *bolt.Tx) error {
 		err := tx.ForEach(func(bname []byte, bucket *bolt.Bucket) error {
-			if bucket.Stats().KeyN == 0 { //empty bucket
+			if bucket.Stats().KeyN == 0 { //empty bucket, check next
 				return nil
 			}
 			cur := bucket.Cursor()
@@ -88,7 +93,7 @@ func (b *PQueue) Dequeue() (*Message, error) {
 
 			// Remove message
 			if err := cur.Delete(); err != nil {
-				return err
+				return errors.Wrap(err, "remove message failed")
 			}
 			return foundItem //to stop the iteration
 		})
@@ -97,10 +102,7 @@ func (b *PQueue) Dequeue() (*Message, error) {
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return m, nil
+	return m, err // m is nil when not found
 }
 
 // Size returns the number of entries of a given priority from 1 to 5
@@ -123,11 +125,7 @@ func (b *PQueue) Size(priority int) (int, error) {
 
 // Close closes the queue and releases all resources
 func (b *PQueue) Close() error {
-	err := b.conn.Close()
-	if err != nil {
-		return err
-	}
-	return nil
+	return b.conn.Close()
 }
 
 // taken from boltDB. Avoids corruption when re-queueing

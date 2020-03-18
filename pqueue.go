@@ -2,10 +2,9 @@ package boltqueue
 
 import (
 	"encoding/binary"
-	"errors"
-	"fmt"
 
 	bolt "github.com/etcd-io/bbolt"
+	"github.com/pkg/errors"
 )
 
 // TODO: Interfacification of messages
@@ -22,19 +21,25 @@ type PQueue struct {
 
 // NewPQueue loads or creates a new PQueue with the given filename
 func NewPQueue(filename string) (*PQueue, error) {
-	db, err := bolt.Open(filename, 0600, nil)
+	db, err := bolt.Open(filename, 0644, nil)
 	if err != nil {
 		return nil, err
 	}
 	return &PQueue{db}, nil
 }
 
-func (b *PQueue) enqueueMessage(priority int, key []byte, message *Message) error {
+func getBucketName(priority int) ([]byte, error) {
 	if priority < 0 || priority > 255 {
-		return fmt.Errorf("Invalid priority %d on Enqueue", priority)
+		return nil, errors.Errorf("invalid priority %d, should in range 0~255", priority)
 	}
-	p := make([]byte, 1)
-	p[0] = byte(uint8(priority))
+	return []byte{byte(priority)}, nil
+}
+
+func (b *PQueue) enqueueMessage(priority int, key []byte, message *Message) error {
+	p, err := getBucketName(priority)
+	if err != nil {
+		return err
+	}
 	return b.conn.Update(func(tx *bolt.Tx) error {
 		// Get bucket for this priority level
 		pb, err := tx.CreateBucketIfNotExists(p)
@@ -62,7 +67,7 @@ func (b *PQueue) Enqueue(priority int, message *Message) error {
 // of that priority.
 func (b *PQueue) Requeue(priority int, message *Message) error {
 	if message.key == nil {
-		return fmt.Errorf("Cannot requeue new message")
+		return errors.New("cannot requeue new message")
 	}
 	return b.enqueueMessage(priority, message.key, message)
 }
@@ -100,20 +105,20 @@ func (b *PQueue) Dequeue() (*Message, error) {
 
 // Size returns the number of entries of a given priority from 1 to 5
 func (b *PQueue) Size(priority int) (int, error) {
-	if priority < 0 || priority > 255 {
-		return 0, fmt.Errorf("Invalid priority %d for Size()", priority)
-	}
-	tx, err := b.conn.Begin(false)
+	p, err := getBucketName(priority)
 	if err != nil {
 		return 0, err
 	}
-	bucket := tx.Bucket([]byte{byte(uint8(priority))})
-	if bucket == nil {
-		return 0, nil
-	}
-	count := bucket.Stats().KeyN
-	tx.Rollback()
-	return count, nil
+	count := 0
+	err = b.conn.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(p)
+		if bucket == nil {
+			return nil
+		}
+		count = bucket.Stats().KeyN
+		return nil
+	})
+	return count, err
 }
 
 // Close closes the queue and releases all resources

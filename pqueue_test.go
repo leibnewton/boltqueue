@@ -15,8 +15,8 @@ func TestEnqueue(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer testPQueue.Close()
 	defer os.Remove(queueFile)
+	defer testPQueue.Close()
 
 	// Enqueue 50 messages
 	for p := 1; p <= 5; p++ {

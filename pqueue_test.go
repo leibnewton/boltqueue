@@ -7,7 +7,28 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
+
+func TestNoDeadLockInSize(t *testing.T) {
+	queueFile := fmt.Sprintf("%d_test.db", time.Now().UnixNano())
+	testPQueue, err := NewPQueue(queueFile)
+	if err != nil {
+		t.Error(err)
+	}
+	defer os.Remove(queueFile)
+	defer testPQueue.Close()
+
+	n, err := testPQueue.Size(0)
+	assert.NoError(t, err)
+	assert.Zero(t, n)
+
+	err = testPQueue.Enqueue(0, NewMessage("hello"))
+	assert.NoError(t, err)
+	err = testPQueue.Enqueue(0, NewMessage("world")) // deadlock here in commit 944e945c0fdf6
+	assert.NoError(t, err)
+}
 
 func TestEnqueue(t *testing.T) {
 	queueFile := fmt.Sprintf("%d_test.db", time.Now().UnixNano())
@@ -45,8 +66,8 @@ func TestDequeue(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer testPQueue.Close()
 	defer os.Remove(queueFile)
+	defer testPQueue.Close()
 
 	//Put them in in reverse priority order
 	for p := 5; p >= 1; p-- {
@@ -91,8 +112,8 @@ func TestRequeue(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer testPQueue.Close()
 	defer os.Remove(queueFile)
+	defer testPQueue.Close()
 
 	for p := 1; p <= 5; p++ {
 		err := testPQueue.Enqueue(p, NewMessage(fmt.Sprintf("test message %d", p)))
@@ -131,8 +152,8 @@ func TestGoroutines(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer testPQueue.Close()
 	defer os.Remove(queueFile)
+	defer testPQueue.Close()
 
 	var wg sync.WaitGroup
 

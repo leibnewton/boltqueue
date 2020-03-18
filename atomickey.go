@@ -11,9 +11,9 @@ type atomicKey struct {
 }
 
 func (a *atomicKey) Get() uint64 {
+	t := time.Now().UnixNano()
 	a.Lock()
 	defer a.Unlock()
-	t := time.Now().UnixNano()
 	if t <= a.key {
 		t = a.key + 1
 	}

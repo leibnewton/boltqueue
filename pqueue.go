@@ -8,6 +8,7 @@ import (
 )
 
 // TODO: Interfacification of messages
+// TODO: add Peek(index) and Drop(n)
 
 var foundItem = errors.New("item found")
 
@@ -83,11 +84,11 @@ func (b *PQueue) Dequeue() (*Message, error) {
 	var m *Message
 	err := b.conn.Update(func(tx *bolt.Tx) error {
 		err := tx.ForEach(func(bname []byte, bucket *bolt.Bucket) error {
-			if bucket.Stats().KeyN == 0 { //empty bucket, check next
+			cur := bucket.Cursor()
+			k, v := cur.First() // Should not be empty by definition
+			if k == nil {       // empty bucket, check next
 				return nil
 			}
-			cur := bucket.Cursor()
-			k, v := cur.First() //Should not be empty by definition
 			priority, _ := binary.Uvarint(bname)
 			m = &Message{priority: int(priority), key: cloneBytes(k), value: cloneBytes(v)}
 

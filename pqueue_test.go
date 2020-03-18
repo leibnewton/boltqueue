@@ -216,11 +216,48 @@ func BenchmarkPQueue(b *testing.B) {
 	b.StartTimer()
 	for n := 0; n < b.N; n++ {
 		for p := 1; p <= 5; p++ {
-			queue.Enqueue(p, NewMessage(fmt.Sprintf("test message %d-%d", p, n)))
+			err := queue.Enqueue(p, NewMessage("test message"))
+			assert.NoError(b, err)
 		}
 	}
 
 	for n := 0; n < b.N; n++ {
+		for p := 1; p <= 6; p++ {
+			_, err := queue.Dequeue()
+			assert.NoError(b, err)
+		}
+	}
+	b.StopTimer()
+}
+
+func BenchmarkPQueue_PriorityEnqueue(b *testing.B) {
+	b.StopTimer()
+	queue, done := setup(b)
+	defer done()
+
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		for p := 1; p <= 5; p++ {
+			err := queue.Enqueue(p, NewMessage("test message"))
+			assert.NoError(b, err)
+		}
+	}
+	b.StopTimer()
+}
+
+func BenchmarkPQueue_PriorityDequeue(b *testing.B) {
+	b.StopTimer()
+	queue, done := setup(b)
+	defer done()
+
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		for p := 1; p <= 6; p++ {
+			err := queue.Enqueue(p, NewMessage("test message"))
+			assert.NoError(b, err)
+		}
+		b.StartTimer()
 		for p := 1; p <= 6; p++ {
 			_, err := queue.Dequeue()
 			assert.NoError(b, err)
@@ -236,9 +273,8 @@ func BenchmarkPQueue_Enqueue(b *testing.B) {
 
 	b.StartTimer()
 	for n := 0; n < b.N; n++ {
-		for p := 1; p <= 5; p++ {
-			queue.Enqueue(p, NewMessage(fmt.Sprintf("test message %d-%d", p, n)))
-		}
+		err := queue.Enqueue(0, NewMessage("test message"))
+		assert.NoError(b, err)
 	}
 	b.StopTimer()
 }
@@ -251,14 +287,12 @@ func BenchmarkPQueue_Dequeue(b *testing.B) {
 	b.StartTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
-		for p := 1; p <= 6; p++ {
-			queue.Enqueue(p, NewMessage(fmt.Sprintf("test message %d-%d", p, n)))
-		}
+		err := queue.Enqueue(0, NewMessage("test message"))
+		assert.NoError(b, err)
 		b.StartTimer()
-		for p := 1; p <= 6; p++ {
-			_, err := queue.Dequeue()
-			assert.NoError(b, err)
-		}
+
+		_, err = queue.Dequeue()
+		assert.NoError(b, err)
 	}
 	b.StopTimer()
 }

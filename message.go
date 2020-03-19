@@ -30,3 +30,7 @@ func (m *Message) ToString() string {
 func (m *Message) Bytes() []byte {
 	return m.value
 }
+
+func (m *Message) SetValue(value []byte) { // ease setting the value of previously dequeued message
+	m.value = value
+}

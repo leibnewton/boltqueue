@@ -3,7 +3,7 @@ package boltqueue
 import (
 	"encoding/binary"
 
-	bolt "github.com/etcd-io/bbolt"
+	bolt "go.etcd.io/bbolt"
 	"github.com/pkg/errors"
 )
 
